@@ -50,3 +50,10 @@ The goal here was to estimate CLV using a simple formula:
 
 ```sql
 CLV = (total_transactions / tenure_months) * 12 * avg_profit_per_transaction
+```
+Where avg_profit_per_transaction is 0.1% of transaction value.
+
+First, I calculated the total number of transactions and the total transaction value per user from the savings_savingsaccount table. Then I calculated the customer’s tenure in months using TIMESTAMPDIFF(MONTH, date_joined, CURDATE()) from the users_customuser table.
+
+With those pieces, I calculated the average profit per transaction and applied the formula provided. Finally, I ordered the result by CLV from highest to lowest.
+
