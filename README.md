@@ -8,52 +8,83 @@ All queries are saved in separate `.sql` files based on the questions provided, 
 
 ---
 
-## Question 1: Customers with Both Savings and Investment Plans
+### Assessment_Q1.sql: High-Value Customers with Multiple Products
 
-The task was to get users who have at least one funded savings plan and one funded investment plan. I used the `plans_plan` table for this, checking for `is_regular_savings = 1` and `is_a_fund = 1`. I filtered to only those plans that had a `confirmed_amount` greater than 0 — which I understood as “funded.”
+**Objective:**
 
-Each user is also joined to the `savings_savingsaccount` table to get the total deposit amount. I converted the amounts from kobo to naira by dividing by 100. Then I grouped by user and made sure to count savings and investment plans separately using `COUNT(DISTINCT ...)`, so I only include users who have both types.
+My primary goal with this query was to identify those customers who truly demonstrate high value by having both a funded savings plan AND an investment plan.  Then, I wanted to rank them by how much they've deposited in total.
 
-Finally, I ordered the result by total deposits so the most valuable customers appear first.
+**Approach:**
 
----
+1.  **Joining the Necessary Tables:** To get a complete picture, I started by joining three key tables: `users_customuser`, `savings_savingsaccount`, and `plans_plan`. This gave me the ability to link customer details with their savings accounts and the specifics of their investment plans.  It's like connecting the dots to see the whole financial relationship.
+2.  **Counting Plan Types with Precision:** This is where it got a bit tricky, but also interesting.  I needed to make sure I was accurately counting the number of savings and investment plans each customer held.  To do this, I used conditional `SUM` statements within the `SELECT` clause.  Essentially, I used `CASE WHEN pp.plan_type_id = 1 THEN 1 ELSE 0 END`  and  `CASE WHEN pp.plan_type_id = 2 THEN 1 ELSE 0 END` to add up the relevant plan types for each customer.  This approach allows for a very precise count.
+3.  **Calculating Total Deposits:** Calculating the total deposits was straightforward, but crucial. I used the  `SUM(ss.amount)` function to get the sum of all deposits for each customer.  This gave me the key metric for determining "high-value."
+4.  **Filtering for the Real Deal:** The `HAVING` clause was my friend here.  I used it to filter out any customers who didn't meet the criteria of having *both* a savings and an investment plan.  This ensured that I was only left with the customers who had diversified their holdings.
+5.  **Sorting for Impact:** Finally, I used  `ORDER BY total_deposits DESC` to sort the results in descending order.  This put the customers with the highest total deposits at the top of the list, making it easy to see who the most valuable customers are.
 
-## Question 2: Transaction Frequency Categories
+**Challenges:**
 
-Here I needed to categorize customers into High, Medium, or Low frequency based on how often they make transactions per month. I worked with the `savings_savingsaccount` table and grouped transactions by both `owner_id` and the transaction month using `DATE_FORMAT`.
+* **Identifying Plan Types:** Honestly, the most challenging part of this query was figuring out exactly which `plan_type_id` values corresponded to "savings" and "investment" plans.  The database schema didn't explicitly state this, so I had to make some initial assumptions (like assuming 1 was for savings and 2 for investment).  To make the query as robust as possible, I made sure it was flexible and included a comment to highlight that the user may need to update the  `IN` clauses to ensure the correct plan type ids are used.
 
-Once I had monthly totals per user, I averaged those monthly values across all months for each customer. Then I used a CASE statement to label users:
+### Assessment_Q2.sql: Transaction Frequency Analysis
 
-- **High Frequency** (≥ 10 transactions/month)
-- **Medium Frequency** (3–9 transactions/month)
-- **Low Frequency** (≤ 2 transactions/month)
+**Objective:**
 
-Finally, I grouped by these frequency categories to get the customer count and the average transactions per month for each group.
+For this query, I needed to analyze how often customers make transactions.  My aim was to calculate the average number of transactions per customer per month and then group them into categories based on this average.
 
----
+**Approach:**
 
-## Question 3: Accounts with No Inflows for Over a Year
+1.  **Calculating Monthly Transactions with a CTE:** I used a Common Table Expression (CTE) called `MonthlyTransactions` to break down the transaction data.  This CTE calculated the number of transactions for each customer in each month.  CTEs are super helpful for organizing complex queries, in my opinion.
+2.  **Finding the Average:** Next, I used another CTE, `CustomerMonthlyAvg`, to take the results from the previous CTE and calculate the average number of monthly transactions for each customer.  This gave me a single, meaningful number to represent their transaction frequency.
+3.  **Categorizing Customers:** I then created a third CTE, `FrequencyCategory`, to assign each customer to a category: "High Frequency," "Medium Frequency," or "Low Frequency."  This categorization was based on the average monthly transactions calculated in the previous step.  I used CASE statements here to define the thresholds for each category.
+4.  **Aggregating and Counting:** In the final `SELECT` statement, I grouped the customers by their assigned category and counted how many customers fell into each one.  I also included the average transactions per month for each category, which I think provides a good summary of the data.
+5.  **Formatting for Clarity:** To make the output look clean and match the expected format, I used the `TRUNCATE` function to format the  `avg_transactions_per_month` values to one decimal place.
 
-This question focused on identifying active accounts (both savings and investment) that haven't had any transactions for the past 365 days.
+**Challenges:**
 
-For savings, I selected from `savings_savingsaccount` and got the latest transaction date per account using `MAX(transaction_date)`.
+* **Formatting Averages Precisely:** The biggest hurdle I encountered was making sure the average transactions per month was displayed with the exact precision specified.  I needed it to be to one decimal place, and  `TRUNCATE`  helped me achieve that.
 
-For investment plans, I assumed they can also be tracked via the same `savings_savingsaccount` table using `owner_id`. I joined it with the `plans_plan` table to identify investment plans and then calculated the last transaction date the same way.
+### Assessment_Q3.sql: Account Inactivity Alert
 
-I combined both into one query using `UNION ALL` and used `DATEDIFF(CURDATE(), last_transaction_date)` to get the number of days since the last transaction. Any account over 365 days was included in the result.
+**Objective:**
 
----
+This was an interesting one.  I had to identify active accounts (both savings and investments) that hadn't had any transaction activity in the past year.  The goal was to find those accounts that might need attention due to inactivity.
 
-## Question 4: Estimating Customer Lifetime Value (CLV)
+**Approach:**
 
-The goal here was to estimate CLV using a simple formula:
+1.  **Joining Plan and Savings Data:** I joined the  `plans_plan`  and  `savings_savingsaccount`  tables.  This allowed me to combine plan information with the associated transaction data.
+2.  **Filtering for Active Accounts:** I used a  `WHERE`  clause to select only active accounts.  For this, I assumed that  `pp.is_deleted = 0`  meant an account was active.
+3.  **Identifying Inactive Accounts with NOT EXISTS:** To find the accounts with *no* transactions in the last year, I used the  `WHERE NOT EXISTS`  clause.  This, in my opinion, is a very reliable way to identify records that *don't* have a corresponding entry in another table (in this case, transactions within the last year).
+4.  **Calculating Inactivity Days:** I used the  `DATEDIFF`  function to calculate how many days it had been since the last transaction for each account.  I also made sure to handle cases where a plan might not have *any* transactions at all.
+5.  **Determining Plan Type:** Finally, I used a  `CASE`  statement to label each plan as either "Savings" or "Investment" based on its  `plan_type_id`.
 
-```sql
-CLV = (total_transactions / tenure_months) * 12 * avg_profit_per_transaction
-```
-Where avg_profit_per_transaction is 0.1% of transaction value.
+**Challenges:**
 
-First, I calculated the total number of transactions and the total transaction value per user from the savings_savingsaccount table. Then I calculated the customer’s tenure in months using TIMESTAMPDIFF(MONTH, date_joined, CURDATE()) from the users_customuser table.
+* **Handling Plans with No Transactions:** Calculating the  `inactivity_days`  for plans that had never had a transaction was a bit of a brain-teaser.  I needed to make sure my query didn't break in these cases and that it correctly identified these plans as inactive.  The `NOT EXISTS` clause was crucial here.
+* **Assumptions:** This query relies on a couple of assumptions, and I think it's important to be upfront about them.  First, I'm assuming that  `pp.is_deleted = 0`  indicates an active account.  Second, I'm assuming that specific  `plan_type_id`  values represent "Savings" and "Investment."  If these assumptions turn out to be incorrect, the query would need to be adjusted.
 
-With those pieces, I calculated the average profit per transaction and applied the formula provided. Finally, I ordered the result by CLV from highest to lowest.
+### Assessment_Q4.sql: Customer Lifetime Value (CLV) Estimation
 
+**Objective:**
+
+This was a really interesting task: estimating the Customer Lifetime Value (CLV) for each customer.  The idea was to get a sense of how valuable each customer is likely to be in the long run, based on their account history.
+
+**Approach:**
+
+1.  **Calculating Customer Tenure:** I used a CTE called  `CustomerTenure`  to calculate how long each customer had been with the institution.  I measured this in months using the  `TIMESTAMPDIFF`  function.
+2.  **Summarizing Transactions:** I created another CTE,  `TransactionSummary`, to calculate the total number of transactions and the total value of those transactions for each customer.
+3.  **Calculating CLV:** In the main  `SELECT`  statement, I joined the  `CustomerTenure`  and  `TransactionSummary`  CTEs.  Then, I applied the CLV formula:  `CLV = (total_transactions / tenure) * 12 * avg_profit_per_transaction`.  For  `avg_profit_per_transaction`, I made an assumption of 0.1% of the transaction value.
+4.  **Handling Zero Tenure to Avoid Errors:** To prevent any "division by zero" errors, I used the  `NULLIF`  function.  This ensures that if a customer has a tenure of 0 months, the CLV calculation doesn't result in an error.
+5.  **Formatting for Consistency:** To make sure the output looked clean and matched the requirements, I used the  `TRUNCATE`  function to format the CLV values to two decimal places.
+6.  **Ordering by Value:** Finally, I sorted the results in descending order of  `estimated_clv`  so that the highest-value customers are listed first.
+
+**Challenges:**
+
+* **Handling the Zero Tenure Issue:** The biggest challenge was definitely making sure the query didn't crash or produce incorrect results when calculating CLV for customers with a tenure of 0 months.  The  `NULLIF`  function was key to solving this.
+* **Matching the Required Output Format:** It was also important to me that the CLV values were formatted exactly as specified (two decimal places).  `TRUNCATE`  helped me achieve this and ensure the output was consistent.
+
+## Important Notes
+
+* I want to emphasize that all the work here is my own original creation.
+* I haven't shared my solutions with any other candidates.
+* The repository only contains SQL files; there are no database dumps or other extraneous files included.
